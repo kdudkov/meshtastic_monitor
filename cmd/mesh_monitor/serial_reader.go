@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"sync/atomic"
+	"time"
 
 	"go.bug.st/serial"
 
@@ -18,6 +19,7 @@ type SerialConnector struct {
 	ch     chan *pb.ToRadio
 	status uint32
 	cb     func(msg *pb.FromRadio)
+	cancel context.CancelFunc
 }
 
 func NewSerial(addr string, cb func(msg *pb.FromRadio)) *SerialConnector {
@@ -40,11 +42,16 @@ func (r *SerialConnector) Start(ctx context.Context) {
 		return
 	}
 
+	var ctx1 context.Context
+	
+	ctx1, r.cancel = context.WithCancel(ctx)
+	
 	r.SetConnected()
 	go r.writeLoop()
+	go r.pinger(ctx1)
 	r.SendMsg(ConfigMessage())
 
-	r.readLoop(ctx)
+	r.readLoop(ctx1)
 
 	r.stop()
 }
@@ -66,6 +73,7 @@ func (r *SerialConnector) stop() {
 		}
 
 		close(r.ch)
+		r.cancel()
 	}
 }
 
@@ -102,7 +110,7 @@ func (r *SerialConnector) openPort() error {
 
 	b := make([]byte, 32)
 
-	for i := 0; i < len(b); i++ {
+	for i := range b {
 		b[i] = start2
 	}
 
@@ -133,6 +141,8 @@ func (r *SerialConnector) writeLoop() {
 }
 
 func (r *SerialConnector) readLoop(ctx context.Context) {
+	r.port.SetReadTimeout(time.Minute)
+
 	buf := bufio.NewReader(r.port)
 
 	for ctx.Err() == nil {
@@ -145,6 +155,20 @@ func (r *SerialConnector) readLoop(ctx context.Context) {
 		}
 
 		r.cb(msg)
+	}
+}
+
+func (r *SerialConnector) pinger(ctx context.Context) {
+	t := time.NewTicker(time.Second * 10)
+	defer t.Stop()
+
+	for ctx.Err() == nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.SendMsg(Heartbeat())
+		}
 	}
 }
 

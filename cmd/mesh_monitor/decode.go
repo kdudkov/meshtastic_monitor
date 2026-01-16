@@ -17,15 +17,20 @@ func (app *App) GetName(addr uint32) string {
 		return color.HiGreenString("%x (me)", app.me)
 	}
 
+	if addr == 0xffffffff {
+		return color.HiBlackString("all")
+	}
+
+	col := color.New(colors[int(addr)%len(colors)])
+
 	if v, ok := app.nodes.Load(addr); ok {
 		if node, ok1 := v.(*pb.NodeInfo); ok1 {
-			name = color.New(colors[int(addr)%len(colors)]).
-				Sprintf("%x (%s)", addr, cmp.Or(node.GetUser().GetLongName(), node.String()))
+			name = col.Sprintf("%x (%s)", addr, cmp.Or(node.GetUser().GetLongName(), node.String()))
 		}
 	}
 
 	if name == "" {
-		name = fmt.Sprintf("%x", addr)
+		name = col.Sprintf("%x", addr)
 	}
 
 	return name

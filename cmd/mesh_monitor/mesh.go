@@ -87,6 +87,10 @@ func ConfigMessage() *pb.ToRadio {
 	return &pb.ToRadio{PayloadVariant: &pb.ToRadio_WantConfigId{WantConfigId: uint32(rand.Intn(65535))}}
 }
 
+func Heartbeat() *pb.ToRadio {
+	return &pb.ToRadio{PayloadVariant: &pb.ToRadio_Heartbeat{Heartbeat: &pb.Heartbeat{Nonce: uint32(rand.Intn(65535))}}}
+}
+
 // TextMessage - creates text message
 // to = 0xffffffff - broadcast
 func TextMessage(from uint32, to uint32, ch uint32, text string) *pb.ToRadio {

@@ -19,6 +19,7 @@ type TCPConnector struct {
 	ch     chan *pb.ToRadio
 	status uint32
 	cb     func(msg *pb.FromRadio)
+	cancel context.CancelFunc
 }
 
 func NewTCP(addr string, cb func(msg *pb.FromRadio)) *TCPConnector {
@@ -48,11 +49,16 @@ func (r *TCPConnector) Start(ctx context.Context) {
 	r.log.Info("connected")
 	fmt.Println("connected")
 
+	var ctx1 context.Context
+	
+	ctx1, r.cancel = context.WithCancel(ctx)
+	
 	r.SetConnected()
 	go r.writeLoop()
+	go r.pinger(ctx1)
 	r.SendMsg(ConfigMessage())
 
-	r.readLoop(ctx)
+	r.readLoop(ctx1)
 
 	r.stop()
 }
@@ -118,5 +124,19 @@ func (r *TCPConnector) readLoop(ctx context.Context) {
 		}
 
 		r.cb(msg)
+	}
+}
+
+func (r *TCPConnector) pinger(ctx context.Context) {
+	t := time.NewTicker(time.Second * 10)
+	defer t.Stop()
+
+	for ctx.Err() == nil {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.SendMsg(Heartbeat())
+		}
 	}
 }

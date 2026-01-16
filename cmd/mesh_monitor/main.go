@@ -56,6 +56,8 @@ func NewApp(network bool, address string, port string) *App {
 
 func (app *App) Run() {
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 
@@ -76,7 +78,6 @@ func (app *App) Run() {
 	go app.Reconnect(ctx)
 
 	<-sigc
-	cancel()
 	slog.Info("shutting down")
 }
 
@@ -86,6 +87,8 @@ func (app *App) Reconnect(ctx context.Context) {
 			NewTCP(net.JoinHostPort(app.address, "4403"), app.ProcessMessage).Start(ctx)
 		} else {
 			if port := app.getSerialPort(); port != "" {
+				fmt.Printf("connecting to serial port %s\n", port)
+				
 				NewSerial(port, app.ProcessMessage).Start(ctx)
 			} else {
 				app.log.Warn("no serial port found")
