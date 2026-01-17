@@ -1,4 +1,4 @@
-package main
+package readers
 
 import (
 	"bufio"
@@ -43,9 +43,9 @@ func (r *SerialConnector) Start(ctx context.Context) {
 	}
 
 	var ctx1 context.Context
-	
+
 	ctx1, r.cancel = context.WithCancel(ctx)
-	
+
 	r.SetConnected()
 	go r.writeLoop()
 	go r.pinger(ctx1)

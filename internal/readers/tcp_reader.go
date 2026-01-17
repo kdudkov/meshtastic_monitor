@@ -1,4 +1,4 @@
-package main
+package readers
 
 import (
 	"bufio"
@@ -50,9 +50,9 @@ func (r *TCPConnector) Start(ctx context.Context) {
 	fmt.Println("connected")
 
 	var ctx1 context.Context
-	
+
 	ctx1, r.cancel = context.WithCancel(ctx)
-	
+
 	r.SetConnected()
 	go r.writeLoop()
 	go r.pinger(ctx1)

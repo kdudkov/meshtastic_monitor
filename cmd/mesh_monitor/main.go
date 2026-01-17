@@ -15,6 +15,9 @@ import (
 
 	"github.com/fatih/color"
 	"go.bug.st/serial"
+
+	"mesh/internal/atak"
+	"mesh/internal/readers"
 )
 
 var colors = []color.Attribute{
@@ -35,44 +38,57 @@ var colors = []color.Attribute{
 }
 
 type App struct {
-	log        *slog.Logger
-	me         uint32
-	nodes      sync.Map
-	network    bool
-	address    string
-	serialPort string
+	log     *slog.Logger
+	config  *AppConfig
+	address string
+	me      uint32
+	nodes   sync.Map
+	atak    *atak.GoatakClient
 }
 
-func NewApp(network bool, address string, port string) *App {
-	return &App{
-		log:        slog.Default(),
-		network:    network,
-		address:    address,
-		serialPort: port,
-		me:         0,
-		nodes:      sync.Map{},
+func NewApp(config *AppConfig) *App {
+	app := &App{
+		log:    slog.Default(),
+		config: config,
+		me:     0,
+		nodes:  sync.Map{},
 	}
+
+	if app.config.String("atak.host") != "" {
+		app.atak = atak.New(
+			app.config.String("atak.host"),
+			app.config.String("atak.user"),
+			app.config.String("atak.password"),
+			nil)
+	}
+
+	return app
 }
 
 func (app *App) Run() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGINT, syscall.SIGTERM)
 
-	if app.network {
+	if app.config.Bool("network") {
+		app.address = app.config.String("host")
 		if app.address == "" {
 			app.address = GetIP()
-
-			fmt.Printf("found network node with ip %s\n", app.address)
-
-			if app.address == "" {
-				fmt.Println("No IP Address Provided")
-
-				return
-			}
 		}
+
+		if app.address != "" {
+			fmt.Printf("found network node with ip %s\n", app.address)
+		} else {
+			fmt.Println("No IP Address Provided")
+
+			return
+		}
+	}
+
+	if app.atak != nil {
+		go app.atak.Start(ctx)
 	}
 
 	go app.Reconnect(ctx)
@@ -83,13 +99,13 @@ func (app *App) Run() {
 
 func (app *App) Reconnect(ctx context.Context) {
 	for ctx.Err() == nil {
-		if app.network {
-			NewTCP(net.JoinHostPort(app.address, "4403"), app.ProcessMessage).Start(ctx)
+		if app.config.Bool("network") {
+			readers.NewTCP(net.JoinHostPort(app.address, "4403"), app.ProcessMessage).Start(ctx)
 		} else {
 			if port := app.getSerialPort(); port != "" {
 				fmt.Printf("connecting to serial port %s\n", port)
-				
-				NewSerial(port, app.ProcessMessage).Start(ctx)
+
+				readers.NewSerial(port, app.ProcessMessage).Start(ctx)
 			} else {
 				app.log.Warn("no serial port found")
 			}
@@ -100,9 +116,10 @@ func (app *App) Reconnect(ctx context.Context) {
 }
 
 func (app *App) getSerialPort() string {
-	if app.serialPort != "" {
-		return app.serialPort
+	if port := app.config.String("serial_port"); port != "" {
+		return port
 	}
+
 	ports, _ := serial.GetPortsList()
 
 	for _, s := range ports {
@@ -141,5 +158,20 @@ func main() {
 
 	flag.Parse()
 
-	NewApp(*useNet, *host, *port).Run()
+	config := NewAppConfig()
+	config.Load("config.yml", "config_local.yml")
+
+	if *useNet {
+		config.Set("network", "true")
+	}
+
+	if *host != "" {
+		config.Set("host", *host)
+	}
+
+	if *port != "" {
+		config.Set("serial_port", *port)
+	}
+
+	NewApp(config).Run()
 }

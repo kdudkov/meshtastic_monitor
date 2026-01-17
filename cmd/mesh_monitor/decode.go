@@ -3,8 +3,12 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/fatih/color"
+	"github.com/kdudkov/goatak/pkg/cot"
+	"github.com/kdudkov/goatak/pkg/cotproto"
 	"google.golang.org/protobuf/proto"
 
 	pb "mesh/internal/meshtastic"
@@ -14,7 +18,7 @@ func (app *App) GetName(addr uint32) string {
 	var name string
 
 	if addr == app.me {
-		return color.HiGreenString("%x (me)", app.me)
+		return color.HiGreenString("me (%8x)", app.me)
 	}
 
 	if addr == 0xffffffff {
@@ -25,12 +29,14 @@ func (app *App) GetName(addr uint32) string {
 
 	if v, ok := app.nodes.Load(addr); ok {
 		if node, ok1 := v.(*pb.NodeInfo); ok1 {
-			name = col.Sprintf("%x (%s)", addr, cmp.Or(node.GetUser().GetLongName(), node.String()))
+			name = col.Sprintf("%s (%8x)",
+				strings.TrimSpace(cmp.Or(node.GetUser().GetLongName(), node.String())),
+				addr)
 		}
 	}
 
 	if name == "" {
-		name = col.Sprintf("%x", addr)
+		name = col.Sprintf("%8x", addr)
 	}
 
 	return name
@@ -79,6 +85,9 @@ func (app *App) ProcessMessage(msg *pb.FromRadio) {
 				v := new(pb.Position)
 				if err := proto.Unmarshal(d.GetPayload(), v); err == nil {
 					val = color.HiGreenString(v.String())
+					if app.atak != nil {
+						app.atak.SendMessage(convertPosition(p.Packet.GetFrom(), from, v))
+					}
 				}
 			case pb.PortNum_ATAK_PLUGIN:
 				v := new(pb.TAKPacket)
@@ -98,4 +107,31 @@ func PortName(port pb.PortNum) string {
 	n := int(port)
 
 	return color.New(colors[n%len(colors)]).Sprintf("%s", port.String())
+}
+
+func convertPosition(id uint32, from string, p *pb.Position) *cotproto.TakMessage {
+	evt := &cotproto.CotEvent{
+		Uid:       fmt.Sprintf("!%8x", id),
+		Type:      "a-f-G",
+		SendTime:  cot.TimeToMillis(time.Now()),
+		StartTime: cot.TimeToMillis(time.Now()),
+		StaleTime: cot.TimeToMillis(time.Now().Add(time.Hour)),
+		Lat:       float64(p.GetLatitudeI()) * 1e-7,
+		Lon:       float64(p.GetLongitudeI()) * 1e-7,
+		Hae:       float64(p.GetAltitudeHae()),
+		Ce:        float64(p.GetPDOP()) / 100,
+		Le:        0,
+		Detail: &cotproto.Detail{
+			Contact: &cotproto.Contact{
+				Callsign: from,
+			},
+		},
+	}
+
+	return &cotproto.TakMessage{
+		TakControl:     nil,
+		CotEvent:       evt,
+		SubmissionTime: 0,
+		CreationTime:   0,
+	}
 }
