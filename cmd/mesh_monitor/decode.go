@@ -14,29 +14,30 @@ import (
 	pb "mesh/internal/meshtastic"
 )
 
-func (app *App) GetName(addr uint32) string {
+func (app *App) GetName(addr uint32, useColor bool) string {
 	var name string
+	var col *color.Color
 
-	if addr == app.me {
-		return color.HiGreenString("me (%8x)", app.me)
-	}
-
-	if addr == 0xffffffff {
-		return color.HiBlackString("all")
-	}
-
-	col := color.New(colors[int(addr)%len(colors)])
-
-	if v, ok := app.nodes.Load(addr); ok {
-		if node, ok1 := v.(*pb.NodeInfo); ok1 {
-			name = col.Sprintf("%s (%8x)",
-				strings.TrimSpace(cmp.Or(node.GetUser().GetLongName(), node.String())),
+	switch addr {
+	case 0xffffffff:
+		name = "all"
+		col = color.New(color.FgHiBlack)
+	case app.me:
+		name = "me"
+		col = color.New(color.FgHiGreen)
+	default:
+		col = color.New(colors[int(addr)%len(colors)])
+		if node := app.Load(addr); node != nil {
+			name = fmt.Sprintf("%s (%8x)",
+				strings.TrimSpace(cmp.Or(node.GetUser().GetLongName(), node.GetUser().GetShortName())),
 				addr)
+		} else {
+			name = fmt.Sprintf("%8x", addr)
 		}
 	}
 
-	if name == "" {
-		name = col.Sprintf("%8x", addr)
+	if useColor {
+		name = col.Sprint(name)
 	}
 
 	return name
@@ -52,8 +53,8 @@ func (app *App) ProcessMessage(msg *pb.FromRadio) {
 			app.nodes.Store(p.NodeInfo.GetNum(), p.NodeInfo)
 		}
 	case *pb.FromRadio_Packet:
-		from := app.GetName(p.Packet.GetFrom())
-		to := app.GetName(p.Packet.GetTo())
+		from := app.GetName(p.Packet.GetFrom(), true)
+		to := app.GetName(p.Packet.GetTo(), true)
 		ch := p.Packet.GetChannel()
 
 		var hop uint32
@@ -86,7 +87,12 @@ func (app *App) ProcessMessage(msg *pb.FromRadio) {
 				if err := proto.Unmarshal(d.GetPayload(), v); err == nil {
 					val = color.HiGreenString(v.String())
 					if app.atak != nil {
-						app.atak.SendMessage(convertPosition(p.Packet.GetFrom(), from, v))
+						app.atak.SendMessage(convertPosition(
+							p.Packet.GetFrom(),
+							app.GetName(p.Packet.GetFrom(), false),
+							v,
+							fmt.Sprintf("hops %d", hop),
+						))
 					}
 				}
 			case pb.PortNum_ATAK_PLUGIN:
@@ -109,7 +115,7 @@ func PortName(port pb.PortNum) string {
 	return color.New(colors[n%len(colors)]).Sprintf("%s", port.String())
 }
 
-func convertPosition(id uint32, from string, p *pb.Position) *cotproto.TakMessage {
+func convertPosition(id uint32, from string, p *pb.Position, text string) *cotproto.TakMessage {
 	evt := &cotproto.CotEvent{
 		Uid:       fmt.Sprintf("!%8x", id),
 		Type:      "a-f-G",
@@ -128,10 +134,14 @@ func convertPosition(id uint32, from string, p *pb.Position) *cotproto.TakMessag
 		},
 	}
 
+	xd := cot.NewXMLDetails()
+	if text != "" {
+		xd.AddChild("remarks", nil, text)
+	}
+
+	evt.Detail.XmlDetail = xd.AsXMLString()
+
 	return &cotproto.TakMessage{
-		TakControl:     nil,
-		CotEvent:       evt,
-		SubmissionTime: 0,
-		CreationTime:   0,
+		CotEvent: evt,
 	}
 }

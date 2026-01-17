@@ -17,6 +17,7 @@ import (
 	"go.bug.st/serial"
 
 	"mesh/internal/atak"
+	pb "mesh/internal/meshtastic"
 	"mesh/internal/readers"
 )
 
@@ -63,6 +64,22 @@ func NewApp(config *AppConfig) *App {
 	}
 
 	return app
+}
+
+func (app *App) Store(n *pb.NodeInfo) {
+	if n != nil {
+		app.nodes.Store(n.GetNum(), n)
+	}
+}
+
+func (app *App) Load(addr uint32) *pb.NodeInfo {
+	if v, ok := app.nodes.Load(addr); ok {
+		if node, ok1 := v.(*pb.NodeInfo); ok1 {
+			return node
+		}
+	}
+
+	return nil
 }
 
 func (app *App) Run() {

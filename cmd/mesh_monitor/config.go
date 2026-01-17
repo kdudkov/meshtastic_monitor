@@ -19,7 +19,6 @@ type AppConfig struct {
 
 func NewAppConfig() *AppConfig {
 	c := &AppConfig{k: koanf.New(".")}
-
 	setDefaults(c.k)
 
 	return c
