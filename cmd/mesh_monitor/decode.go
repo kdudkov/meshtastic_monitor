@@ -53,6 +53,10 @@ func (app *App) ProcessMessage(msg *pb.FromRadio) {
 			app.nodes.Store(p.NodeInfo.GetNum(), p.NodeInfo)
 		}
 	case *pb.FromRadio_Packet:
+		if p.Packet.GetFrom() == app.me && !app.config.Bool("show_my") {
+			return
+		}
+
 		from := app.GetName(p.Packet.GetFrom(), true)
 		to := app.GetName(p.Packet.GetTo(), true)
 		ch := p.Packet.GetChannel()

@@ -87,7 +87,7 @@ func (c *AppConfig) Duration(key string) time.Duration {
 }
 
 func setDefaults(k *koanf.Koanf) {
-
+	k.Set("show_my", false)
 }
 
 func FileExists(path string) bool {

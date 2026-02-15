@@ -55,11 +55,10 @@ func NewApp(config *AppConfig) *App {
 		nodes:  sync.Map{},
 	}
 
-	if app.config.String("atak.host") != "" {
+	if app.config.String("atak.host") != "" && app.config.String("atak.token") != "" {
 		app.atak = atak.New(
 			app.config.String("atak.host"),
-			app.config.String("atak.user"),
-			app.config.String("atak.password"),
+			app.config.String("atak.token"),
 			nil)
 	}
 

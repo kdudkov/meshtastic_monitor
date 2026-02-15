@@ -4,11 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,34 +15,32 @@ import (
 	"github.com/google/uuid"
 	"github.com/kdudkov/goatak/pkg/cot"
 	"github.com/kdudkov/goatak/pkg/cotproto"
-	"github.com/kdudkov/goutils/request"
 )
 
 type GoatakClient struct {
-	uid      string
-	token    string
-	logger   *slog.Logger
-	host     string
-	username string
-	password string
-	status   uint32
-	ch       chan *cotproto.TakMessage
-	cb       func(m *cotproto.TakMessage)
-	client   *http.Client
-	cancel   context.CancelFunc
+	uid            string
+	token          string
+	logger         *slog.Logger
+	host           string
+	status         uint32
+	ch             chan *cotproto.TakMessage
+	cb             func(m *cotproto.TakMessage)
+	client         *http.Client
+	reconnectDelay time.Duration
+	cancel         context.CancelFunc
 }
 
-func New(host, username, password string, cb func(m *cotproto.TakMessage)) *GoatakClient {
+func New(host, token string, cb func(m *cotproto.TakMessage)) *GoatakClient {
 	return &GoatakClient{
-		uid:      uuid.NewString(),
-		logger:   slog.With(slog.String("logger", "atak")),
-		host:     host,
-		username: username,
-		password: password,
-		cb:       cb,
-		status:   0,
-		ch:       make(chan *cotproto.TakMessage, 128),
-		client:   &http.Client{Timeout: time.Second * 5},
+		uid:            uuid.NewString(),
+		logger:         slog.With(slog.String("logger", "atak")),
+		host:           host,
+		token:          token,
+		reconnectDelay: time.Second,
+		cb:             cb,
+		status:         0,
+		ch:             make(chan *cotproto.TakMessage, 128),
+		client:         &http.Client{Timeout: time.Second * 5},
 	}
 }
 
@@ -89,48 +85,15 @@ func (g *GoatakClient) SendMessage(msg *cotproto.TakMessage) {
 	}
 }
 
-func (g *GoatakClient) getToken() error {
-	res := make(map[string]string)
-
-	err := request.New(g.client, g.logger).Auth(g.username, g.password).
-		URL(fmt.Sprintf("https://%s/token", g.host)).
-		AddHeader("Content-Type", "application/json").
-		Method("POST").
-		Body(strings.NewReader(fmt.Sprintf("{\"login\":\"%s\", \"password\":\"%s\"}", g.username, g.password))).
-		GetJSON(context.Background(), &res)
-
-	if err != nil {
-		return err
-	}
-
-	if t := res["token"]; t != "" {
-		g.token = t
-
-		return nil
-	}
-
-	return errors.New("no token in answer")
-}
-
 func (g *GoatakClient) connect(ctx context.Context) {
 	for ctx.Err() == nil {
-		if g.token == "" {
-			if err := g.getToken(); err != nil {
-				g.logger.Error("error getting token", slog.Any("error", err))
-				sleep(ctx, time.Second)
-
-				continue
-			}
-		}
-
 		h := http.Header{"Authorization": []string{"Bearer " + g.token}}
 
 		conn, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("wss://%s/takproto/1", g.host), h)
 
 		if err != nil {
 			g.logger.Error("error on ws dial", slog.Any("error", err))
-			g.token = ""
-			sleep(ctx, time.Second)
+			sleep(ctx, g.reconnectDelay)
 
 			continue
 		}
