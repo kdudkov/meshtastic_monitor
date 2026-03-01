@@ -154,6 +154,8 @@ func (g *GoatakClient) reader(ctx context.Context, conn *websocket.Conn, wg *syn
 
 		if err := g.parse(b); err != nil {
 			g.logger.Error("parse error", slog.Any("error", err))
+
+			break
 		}
 	}
 
